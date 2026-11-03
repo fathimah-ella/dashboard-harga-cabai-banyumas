@@ -1,6 +1,6 @@
 # 🌶️ Bird's Eye Chili Price Dashboard, Banyumas
 
-**Live dashboard:** https://REPLACE-WITH-YOUR-LINK.streamlit.app
+**Live dashboard:** [https://REPLACE-WITH-YOUR-LINK.streamlit.app](https://harga-cabai-rawit-banyumas.streamlit.app/)
 
 Interactive dashboard and supporting code for the ICoCSETI 2026 conference paper:
 
