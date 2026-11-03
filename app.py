@@ -7,6 +7,7 @@
 #   data/dinperindag_2023-2025_clean.xlsx
 #   model_r2/  (hasil STEP 15 notebook REVISI 2)
 # =====================================================================
+import html
 import json
 import os
 import warnings
@@ -85,6 +86,16 @@ st.markdown("""
 .subjudul { margin: 2.2rem 0 .6rem; padding-top: 1.1rem; border-top: 1px solid var(--line);
             font-weight: 700; font-size: 1rem; color: var(--ink) !important; }
 .subjudul.pertama { margin-top: .4rem; padding-top: 0; border-top: none; }
+.tbl { overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+       margin: .3rem 0 .9rem; }
+.tbl table { border-collapse: collapse !important; width: 100%; font-size: .85rem; margin: 0 !important; }
+.tbl th { position: sticky; top: 0; background: #F1F5F9 !important; color: var(--ink) !important; text-align: left;
+          padding: .5rem .75rem !important; border: none !important; border-bottom: 1px solid var(--line) !important;
+          font-weight: 700; }
+.tbl td { padding: .42rem .75rem !important; border: none !important; border-bottom: 1px solid #F1F5F9 !important;
+          color: var(--ink) !important; background: var(--card) !important; }
+.tbl th.n, .tbl td.n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tbl tr:last-child td { border-bottom: none !important; }
 [data-testid="stExpander"] { background: var(--card); border-radius: 10px; }
 </style>
 """, unsafe_allow_html=True)
@@ -137,6 +148,38 @@ def subjudul(teks, pertama=False):
 
 def kartu(label, nilai, ket):
     return f'<div class="kartu"><div class="lb">{label}</div><div class="vl">{nilai}</div><div class="ds">{ket}</div></div>'
+
+
+def _angka(v, desimal):
+    """Angka berformat Indonesia: titik untuk ribuan, koma untuk desimal."""
+    if pd.isna(v):
+        return '–'
+    if isinstance(v, (int, np.integer)):
+        desimal = 0
+    return f"{v:,.{desimal}f}".replace(',', '_').replace('.', ',').replace('_', '.')
+
+
+def tabel(df, desimal=0, fmt=None, tinggi=None):
+    """Tabel HTML biasa (tanpa komponen tabel interaktif Streamlit) supaya tetap tampil
+    walau browser gagal memuat file JavaScript tambahan."""
+    fmt = fmt or {}
+    angka = {c: (c in fmt or pd.api.types.is_numeric_dtype(df[c])) for c in df.columns}
+    th = ''.join(f'<th class="{"n" if angka[c] else ""}">{html.escape(str(c))}</th>' for c in df.columns)
+    baris = []
+    for r in df.itertuples(index=False):
+        sel = []
+        for c, v in zip(df.columns, r):
+            if c in fmt:
+                teks = html.escape(str(fmt[c](v)))
+            elif angka[c]:
+                teks = _angka(v, desimal)
+            else:
+                teks = html.escape(str(v))
+            sel.append(f'<td class="{"n" if angka[c] else ""}">{teks}</td>')
+        baris.append('<tr>' + ''.join(sel) + '</tr>')
+    gaya_t = f' style="max-height:{tinggi}px"' if tinggi else ''
+    st.markdown(f'<div class="tbl"{gaya_t}><table><thead><tr>{th}</tr></thead><tbody>{"".join(baris)}</tbody></table></div>',
+                unsafe_allow_html=True)
 
 
 def gaya(fig, tinggi=330, **kw):
@@ -736,7 +779,7 @@ else:
         tb[f'{m} (Rp)'] = pred[m]
         tb[f'Meleset {m} (Rp)'] = np.abs(pred[m] - akt)
     num = [c for c in tb.columns if c != 'Tanggal']
-    st.dataframe(tb.style.format('{:,.0f}', subset=num, thousands='.'), hide_index=True, use_container_width=True)
+    tabel(tb, desimal=0, tinggi=420)
     st.download_button("Unduh tabel (CSV)", tb.round(0).to_csv(index=False).encode('utf-8'),
                        file_name=f"simulasi_{jenis.replace(' ', '_').lower()}_{tgl_pred[0].date()}_{n_hari}hari.csv",
                        mime='text/csv')
@@ -771,7 +814,7 @@ else:
                                          f"{np.std(list(RS[m]['per_seed'].values()), ddof=1):.2f}".replace('.', ',')
                                          if 'per_seed' in RS[m] else '–')} for m in urutan])
         subjudul("(a) MAPE (%) seluruh periode uji (Tabel III paper)", pertama=True)
-        st.dataframe(tab3.style.format(precision=2, decimal=',', thousands='.'), hide_index=True, use_container_width=True)
+        tabel(tab3, desimal=2)
         best = min(urutan, key=lambda m: RS[m]['MAPE Rata2'])
         n_h = sum(min(urutan, key=lambda m: RS[m][f'MAPE H{h}']) == best for h in hs)
         teks = (f"Model dengan MAPE rata-rata terkecil adalah <b>{best}</b> ({pct(RS[best]['MAPE Rata2'], 2)}), dan model "
@@ -805,9 +848,8 @@ else:
                                   stats.ttest_1samp(list(so.values()), RS['Naive persistence']['MAPE Rata2']).pvalue))
             if baris:
                 subjudul("(b) Uji signifikansi (MAPE 5 seed)")
-                st.dataframe(pd.DataFrame(baris, columns=['Perbandingan', 'Uji', 'p']).style.format(
-                             {'p': lambda v: '< 0,001' if v < 0.001 else f'{v:.3f}'.replace('.', ',')}),
-                             hide_index=True, use_container_width=True)
+                tabel(pd.DataFrame(baris, columns=['Perbandingan', 'Uji', 'p']),
+                      fmt={'p': lambda v: '< 0,001' if v < 0.001 else f'{v:.3f}'.replace('.', ',')})
                 beda = [b for b in baris if b[2] < 0.05]
                 sama = [b for b in baris if b[2] >= 0.05]
                 teks = ("Nilai p di bawah 0,05 berarti selisihnya <b>bukan kebetulan</b>; di atas 0,05 berarti selisihnya "
@@ -872,7 +914,7 @@ else:
             subjudul("(e) MAPE hanya pada harga yang benar-benar tercatat")
             ta = pd.DataFrame([{'Model': k, 'MAPE semua target (%)': RS[k]['MAPE Rata2'] if k in RS else np.nan,
                                 'MAPE target data asli (%)': v['rata2']} for k, v in asli_.items()])
-            st.dataframe(ta.style.format(precision=2, decimal=','), hide_index=True, use_container_width=True)
+            tabel(ta, desimal=2)
             urut_a = ta.sort_values('MAPE target data asli (%)')['Model'].tolist()
             urut_s = ta.sort_values('MAPE semua target (%)')['Model'].tolist()
             teks = ("Sekitar 3% harga pada periode uji adalah hasil pengisian (bukan catatan lapangan). Setelah titik "
